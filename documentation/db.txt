@@ -1,0 +1,51 @@
+-- Uživatelé
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    city VARCHAR(50),
+    profile_image VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Kola
+CREATE TABLE bikes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    owner_id INT NOT NULL,
+    bike_type VARCHAR(50) NOT NULL,
+    frame_size VARCHAR(10),
+    price_per_day DECIMAL(10,2) NOT NULL,
+    description TEXT,
+    city VARCHAR(50) NOT NULL,
+    address VARCHAR(200),
+    available BOOLEAN DEFAULT 1,
+    image_url VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_id) REFERENCES users(id)
+);
+
+-- Rezervace
+CREATE TABLE bookings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    bike_id INT NOT NULL,
+    renter_id INT NOT NULL,
+    rental_date DATE NOT NULL,
+    rental_days INT NOT NULL,
+    total_price DECIMAL(10,2) NOT NULL,
+    status ENUM('pending', 'confirmed', 'completed', 'cancelled') DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (bike_id) REFERENCES bikes(id),
+    FOREIGN KEY (renter_id) REFERENCES users(id)
+);
+
+-- Hodnocení
+CREATE TABLE reviews (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    booking_id INT NOT NULL,
+    rating INT CHECK (rating >= 1 AND rating <= 5),
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (booking_id) REFERENCES bookings(id)
+);
