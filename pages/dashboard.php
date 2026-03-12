@@ -167,7 +167,7 @@ try {
       <a href="browse_bikes.php" class="bg-gray-900 border border-gray-700 rounded-xl p-6 hover:from-cyan-800 hover:to-cyan-700 transition group">
         <div class="text-4xl mb-4">🔍</div>
         <h3 class="text-xl font-bold mb-2">Browse Bikes</h3>
-        <p class="text-gray-300 text-sm mb-4">Find bikes to rent in your area</p>
+        <p class="text-gray-300 text-sm mb-4">Find bikes to rent</p>
         <span class="text-cyan-400 text-sm group-hover:text-cyan-300">Start browsing →</span>
       </a>
 
@@ -177,14 +177,6 @@ try {
         <h3 class="text-xl font-bold mb-2">List Your Bike</h3>
         <p class="text-gray-300 text-sm mb-4">Add your bike and start earning</p>
         <span class="text-cyan-400 text-sm group-hover:text-cyan-300">Add bike →</span>
-      </a>
-
-      <!-- View Profile -->
-      <a href="profile.php" class="bg-gray-900 border border-gray-700 rounded-xl p-6 hover:to-purple-700 transition group">
-        <div class="text-4xl mb-4">👤</div>
-        <h3 class="text-xl font-bold mb-2">My Profile</h3>
-        <p class="text-gray-300 text-sm mb-4">Update your information</p>
-        <span class="text-cyan-400 text-sm group-hover:text-cyan-300">View profile →</span>
       </a>
 
     </div>

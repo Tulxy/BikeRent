@@ -4,6 +4,7 @@
 <header class="border-b border-gray-800 sticky top-0 bg-black z-50">
   <div class="container mx-auto px-6 py-4 flex justify-between items-center">
     <div class="flex items-center gap-8">
+
       <a href="../index.php" class="text-2xl font-bold hover:text-cyan-500 transition">BikeRent</a>
       <nav class="hidden md:flex gap-6 text-sm">
         <a href="../pages/dashboard.php" class="text-cyan-500 font-semibold">Dashboard</a>

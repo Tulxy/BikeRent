@@ -14,105 +14,103 @@ $pdo = getDB();
 $user_id = $_SESSION['user_id'];
 $user_name = $_SESSION['user_name'];
 
-// Zpracování smazání kola
-if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
-  $bike_id = $_GET['delete'];
+// Zpracování zrušení rezervace
+if (isset($_GET['cancel']) && is_numeric($_GET['cancel'])) {
+  $booking_id = $_GET['cancel'];
 
   try {
-    // Zkontrolovat, že kolo patří uživateli
-    $stmt = $pdo->prepare("SELECT id FROM bikes WHERE id = ? AND owner_id = ?");
-    $stmt->execute([$bike_id, $user_id]);
+    // Zkontrolovat, že rezervace patří uživateli a lze ji zrušit
+    $stmt = $pdo->prepare("
+            SELECT id, status FROM bookings 
+            WHERE id = ? AND renter_id = ? 
+            AND status IN ('pending', 'confirmed')
+        ");
+    $stmt->execute([$booking_id, $user_id]);
 
     if ($stmt->fetch()) {
-      // Zkontrolovat zda má aktivní nebo budoucí rezervace
-      $stmt = $pdo->prepare("
-                SELECT COUNT(*) as booking_count 
-                FROM bookings 
-                WHERE bike_id = ? 
-                AND status IN ('pending', 'confirmed')
-            ");
-      $stmt->execute([$bike_id]);
-      $result = $stmt->fetch();
-
-      if ($result['booking_count'] > 0) {
-        $_SESSION['error'] = "Cannot delete bike: It has active or pending bookings. Cancel them first.";
-      } else {
-        // Smazat kolo (i s completed/cancelled bookings)
-        // Nejdřív smazat všechny bookings
-        $stmt = $pdo->prepare("DELETE FROM bookings WHERE bike_id = ?");
-        $stmt->execute([$bike_id]);
-
-        // Pak smazat kolo
-        $stmt = $pdo->prepare("DELETE FROM bikes WHERE id = ?");
-        $stmt->execute([$bike_id]);
-
-        $_SESSION['success'] = "Bike deleted successfully!";
-      }
+      // Zrušit rezervaci
+      $stmt = $pdo->prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?");
+      $stmt->execute([$booking_id]);
+      $_SESSION['success'] = "Booking cancelled successfully!";
     } else {
-      $_SESSION['error'] = "Bike not found or you don't have permission to delete it.";
+      $_SESSION['error'] = "Booking not found or cannot be cancelled.";
     }
   } catch(PDOException $e) {
-    $_SESSION['error'] = "Error deleting bike: " . $e->getMessage();
+    $_SESSION['error'] = "Error cancelling booking: " . $e->getMessage();
   }
 
-  header("Location: my_bikes.php");
+  header("Location: my_bookings.php");
   exit;
 }
 
-// Zpracování toggle dostupnosti
-if (isset($_GET['toggle']) && is_numeric($_GET['toggle'])) {
-  $bike_id = $_GET['toggle'];
-
-  try {
-    $stmt = $pdo->prepare("SELECT available FROM bikes WHERE id = ? AND owner_id = ?");
-    $stmt->execute([$bike_id, $user_id]);
-    $bike = $stmt->fetch();
-
-    if ($bike) {
-      $new_status = $bike['available'] ? 0 : 1;
-      $stmt = $pdo->prepare("UPDATE bikes SET available = ? WHERE id = ?");
-      $stmt->execute([$new_status, $bike_id]);
-      $_SESSION['success'] = "Bike availability updated!";
-    }
-  } catch(PDOException $e) {
-    $_SESSION['error'] = "Error updating bike: " . $e->getMessage();
-  }
-
-  header("Location: my_bikes.php");
-  exit;
-}
-
-// Získat moje kola
+// Získat všechny moje rezervace
 try {
   $stmt = $pdo->prepare("
         SELECT 
-            b.*,
-            COUNT(DISTINCT bk.id) as total_bookings,
-            COUNT(DISTINCT CASE WHEN bk.status = 'pending' THEN bk.id END) as pending_bookings,
-            COALESCE(SUM(CASE WHEN bk.status = 'completed' THEN bk.total_price ELSE 0 END), 0) as total_earned
-        FROM bikes b
-        LEFT JOIN bookings bk ON b.id = bk.bike_id
-        WHERE b.owner_id = ?
-        GROUP BY b.id
-        ORDER BY b.created_at DESC
+            b.id,
+            b.rental_date,
+            b.rental_days,
+            b.total_price,
+            b.status,
+            b.created_at,
+            bk.bike_type,
+            bk.frame_size,
+            bk.city as bike_city,
+            bk.address as bike_address,
+            u.name as owner_name,
+            u.phone as owner_phone,
+            u.email as owner_email
+        FROM bookings b
+        JOIN bikes bk ON b.bike_id = bk.id
+        JOIN users u ON bk.owner_id = u.id
+        WHERE b.renter_id = ?
+        ORDER BY 
+            CASE 
+                WHEN b.status = 'pending' THEN 1
+                WHEN b.status = 'confirmed' THEN 2
+                WHEN b.status = 'completed' THEN 3
+                WHEN b.status = 'cancelled' THEN 4
+            END,
+            b.rental_date DESC
     ");
   $stmt->execute([$user_id]);
-  $my_bikes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  $all_bookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-  // Celková statistika
-  $total_bikes = count($my_bikes);
-  $available_bikes = count(array_filter($my_bikes, fn($b) => $b['available'] == 1));
-  $total_earnings = array_sum(array_column($my_bikes, 'total_earned'));
+  // Rozdělit rezervace podle statusu
+  $pending_bookings = array_filter($all_bookings, fn($b) => $b['status'] === 'pending');
+  $confirmed_bookings = array_filter($all_bookings, fn($b) => $b['status'] === 'confirmed');
+  $cancelled_bookings = array_filter($all_bookings, fn($b) => $b['status'] === 'cancelled');
+  $completed_bookings = array_filter($all_bookings, fn($b) => $b['status'] === 'completed');
+
+  // Statistiky
+  $total_bookings = count($all_bookings);
+  $active_bookings = count($pending_bookings) + count($confirmed_bookings);
 
 } catch(PDOException $e) {
   $error = "Database error: " . $e->getMessage();
-  $my_bikes = [];
+  $all_bookings = [];
 }
 
 // Zprávy
 $success = $_SESSION['success'] ?? '';
 $error = $_SESSION['error'] ?? '';
 unset($_SESSION['success'], $_SESSION['error']);
+
+// Helper funkce pro status badge
+function getStatusBadge($status) {
+  switch($status) {
+    case 'pending':
+      return '<span class="bg-yellow-900/50 text-yellow-500 text-xs px-3 py-1 rounded">Pending</span>';
+    case 'confirmed':
+      return '<span class="bg-green-900/50 text-green-500 text-xs px-3 py-1 rounded">Confirmed</span>';
+    case 'completed':
+      return '<span class="bg-blue-900/50 text-blue-500 text-xs px-3 py-1 rounded">Completed</span>';
+    case 'cancelled':
+      return '<span class="bg-gray-700 text-gray-400 text-xs px-3 py-1 rounded">Cancelled</span>';
+    default:
+      return '<span class="bg-gray-700 text-gray-400 text-xs px-3 py-1 rounded">' . ucfirst($status) . '</span>';
+  }
+}
 ?>
 
 <!doctype html>
@@ -122,7 +120,7 @@ unset($_SESSION['success'], $_SESSION['error']);
   <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <script src="https://cdn.tailwindcss.com"></script>
-  <title>My Bikes - BikeRent</title>
+  <title>My Bookings - BikeRent</title>
 </head>
 <body class="bg-black text-white min-h-screen">
 
@@ -135,11 +133,11 @@ unset($_SESSION['success'], $_SESSION['error']);
   <!-- Page Header -->
   <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
     <div>
-      <h1 class="text-4xl font-bold mb-2">My Bikes</h1>
-      <p class="text-gray-400">Manage your bike listings and earnings</p>
+      <h1 class="text-4xl font-bold mb-2">My Bookings</h1>
+      <p class="text-gray-400">Track your bike rental bookings</p>
     </div>
-    <a href="add_bike.php" class="px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg transition font-semibold">
-      + Add New Bike
+    <a href="rentals.php" class="px-6 py-3 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition font-semibold">
+      Book Another Bike
     </a>
   </div>
 
@@ -160,134 +158,341 @@ unset($_SESSION['success'], $_SESSION['error']);
   <div class="grid md:grid-cols-2 gap-6 mb-12">
     <div class="bg-gray-900 border border-gray-700 rounded-xl p-6">
       <div class="flex items-center justify-between mb-2">
-        <span class="text-gray-400 text-sm">Total Bikes</span>
-        <span class="text-2xl">🚴</span>
+        <span class="text-gray-400 text-sm">Total Bookings</span>
+        <span class="text-2xl">📊</span>
       </div>
-      <div class="text-3xl font-bold text-cyan-500"><?php echo $total_bikes; ?></div>
+      <div class="text-3xl font-bold text-cyan-500"><?php echo $total_bookings; ?></div>
     </div>
 
     <div class="bg-gray-900 border border-gray-700 rounded-xl p-6">
       <div class="flex items-center justify-between mb-2">
-        <span class="text-gray-400 text-sm">Available</span>
-        <span class="text-2xl">✅</span>
+        <span class="text-gray-400 text-sm">Active Bookings</span>
+        <span class="text-2xl">🚴</span>
       </div>
-      <div class="text-3xl font-bold text-green-500"><?php echo $available_bikes; ?></div>
+      <div class="text-3xl font-bold text-green-500"><?php echo $active_bookings; ?></div>
     </div>
   </div>
 
-  <!-- Bikes List -->
-  <?php if (empty($my_bikes)): ?>
+  <!-- No Bookings State -->
+  <?php if (empty($all_bookings)): ?>
     <div class="bg-gray-900 border border-gray-700 rounded-xl p-12 text-center">
-      <div class="text-6xl mb-4">🚴</div>
-      <h3 class="text-2xl font-bold mb-2">No bikes yet</h3>
-      <p class="text-gray-400 mb-6">Start earning by listing your first bike!</p>
-      <a href="add_bike.php" class="inline-block px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg transition font-semibold">
-        + Add Your First Bike
+      <div class="text-6xl mb-4">📅</div>
+      <h3 class="text-2xl font-bold mb-2">No bookings yet</h3>
+      <p class="text-gray-400 mb-6">Start your adventure by booking a bike!</p>
+      <a href="../pages/rentals.php" class="inline-block px-6 py-3 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition font-semibold">
+        Browse Bikes
       </a>
     </div>
   <?php else: ?>
 
-    <div class="space-y-4">
-      <?php foreach ($my_bikes as $bike): ?>
-        <div class="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden hover:border-gray-700 transition">
-          <div class="flex flex-col md:flex-row">
+    <!-- Pending Bookings -->
+    <?php if (!empty($pending_bookings)): ?>
+      <div class="mb-12">
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+          <span>⏳</span>
+          <span>Pending Approval</span>
+          <span class="bg-yellow-900/50 text-yellow-500 text-sm px-3 py-1 rounded"><?php echo count($pending_bookings); ?></span>
+        </h2>
 
-            <!-- Bike Image -->
-            <div class="flex items-center justify-center w-full md:w-48 h-48  text-6xl flex-shrink-0">
-              <?php
-              $emoji = '🚴';
-              if (strpos(strtolower($bike['bike_type']), 'mountain') !== false) $emoji = '🚵';
-              if (strpos(strtolower($bike['bike_type']), 'electric') !== false) $emoji = '⚡';
-              if (strpos(strtolower($bike['bike_type']), 'road') !== false) $emoji = '🚴';
-              echo $emoji;
-              ?>
+        <div class="space-y-4">
+          <?php foreach ($pending_bookings as $booking): ?>
+            <div class="bg-gray-900 border border-yellow-800 rounded-xl p-6 hover:border-yellow-700 transition">
+              <div class="flex flex-col md:flex-row gap-6">
+
+                <!-- Bike Image -->
+                <div class="bg-gradient-to-br from-gray-800 to-gray-900 w-full md:w-32 h-32 rounded-lg flex items-center justify-center text-5xl flex-shrink-0">
+                  <?php
+                  $emoji = '🚴';
+                  if (strpos(strtolower($booking['bike_type']), 'mountain') !== false) $emoji = '🚵';
+                  if (strpos(strtolower($booking['bike_type']), 'electric') !== false) $emoji = '⚡';
+                  echo $emoji;
+                  ?>
+                </div>
+
+                <!-- Booking Details -->
+                <div class="flex-grow">
+                  <div class="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
+                    <div>
+                      <div class="flex items-center gap-3 mb-2">
+                        <h3 class="text-xl font-bold"><?php echo htmlspecialchars($booking['bike_type']); ?></h3>
+                        <?php echo getStatusBadge($booking['status']); ?>
+                      </div>
+                      <p class="text-gray-400 text-sm">by <?php echo htmlspecialchars($booking['owner_name']); ?></p>
+                    </div>
+                    <div class="text-2xl font-bold text-cyan-500">
+                      <?php echo number_format($booking['total_price'], 0); ?> Kč
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
+                    <div>
+                      <div class="text-gray-400">Start Date</div>
+                      <div class="font-semibold">📅 <?php echo date('M d, Y', strtotime($booking['rental_date'])); ?></div>
+                    </div>
+                    <div>
+                      <div class="text-gray-400">Duration</div>
+                      <div class="font-semibold">⏱️ <?php echo $booking['rental_days']; ?> days</div>
+                    </div>
+                    <div>
+                      <div class="text-gray-400">Location</div>
+                      <div class="font-semibold">📍 <?php echo htmlspecialchars($booking['bike_city']); ?></div>
+                    </div>
+                    <div>
+                      <div class="text-gray-400">Frame Size</div>
+                      <div class="font-semibold">📏 <?php echo htmlspecialchars($booking['frame_size']); ?></div>
+                    </div>
+                  </div>
+
+                  <div class="bg-yellow-900/30 border border-yellow-700 rounded-lg p-3 mb-4">
+                    <div class="text-sm text-yellow-500">
+                      ⏳ Waiting for owner's approval. You'll be notified once they respond.
+                    </div>
+                  </div>
+
+                  <div class="flex gap-3">
+                    <a href="?cancel=<?php echo $booking['id']; ?>"
+                       class="px-4 py-2 border border-red-600 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition text-sm font-semibold"
+                       onclick="return confirm('Are you sure you want to cancel this booking?')">
+                      Cancel Booking
+                    </a>
+                  </div>
+                </div>
+
+              </div>
             </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
 
-            <!-- Bike Details -->
-            <div class="flex-grow p-6">
-              <div class="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
+    <!-- Confirmed Bookings -->
+    <?php if (!empty($confirmed_bookings)): ?>
+      <div class="mb-12">
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+          <span>✅</span>
+          <span>Confirmed Trips</span>
+          <span class="bg-green-900/50 text-green-500 text-sm px-3 py-1 rounded"><?php echo count($confirmed_bookings); ?></span>
+        </h2>
+
+        <div class="space-y-4">
+          <?php foreach ($confirmed_bookings as $booking): ?>
+            <div class="bg-gray-900 border border-green-800 rounded-xl p-6 hover:border-green-700 transition">
+              <div class="flex flex-col md:flex-row gap-6">
+
+                <!-- Bike Image -->
+                <div class="bg-gradient-to-br from-gray-800 to-gray-900 w-full md:w-32 h-32 rounded-lg flex items-center justify-center text-5xl flex-shrink-0">
+                  <?php
+                  $emoji = '🚴';
+                  if (strpos(strtolower($booking['bike_type']), 'mountain') !== false) $emoji = '🚵';
+                  if (strpos(strtolower($booking['bike_type']), 'electric') !== false) $emoji = '⚡';
+                  echo $emoji;
+                  ?>
+                </div>
+
+                <!-- Booking Details -->
+                <div class="flex-grow">
+                  <div class="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
+                    <div>
+                      <div class="flex items-center gap-3 mb-2">
+                        <h3 class="text-xl font-bold"><?php echo htmlspecialchars($booking['bike_type']); ?></h3>
+                        <?php echo getStatusBadge($booking['status']); ?>
+                      </div>
+                      <p class="text-gray-400 text-sm">by <?php echo htmlspecialchars($booking['owner_name']); ?></p>
+                    </div>
+                    <div class="text-2xl font-bold text-cyan-500">
+                      <?php echo number_format($booking['total_price'], 0); ?> Kč
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
+                    <div>
+                      <div class="text-gray-400">Start Date</div>
+                      <div class="font-semibold">📅 <?php echo date('M d, Y', strtotime($booking['rental_date'])); ?></div>
+                    </div>
+                    <div>
+                      <div class="text-gray-400">Duration</div>
+                      <div class="font-semibold">⏱️ <?php echo $booking['rental_days']; ?> days</div>
+                    </div>
+                    <div>
+                      <div class="text-gray-400">Location</div>
+                      <div class="font-semibold">📍 <?php echo htmlspecialchars($booking['bike_city']); ?></div>
+                    </div>
+                    <div>
+                      <div class="text-gray-400">Frame Size</div>
+                      <div class="font-semibold">📏 <?php echo htmlspecialchars($booking['frame_size']); ?></div>
+                    </div>
+                  </div>
+
+                  <div class="bg-green-900/30 border border-green-700 rounded-lg p-4 mb-4">
+                    <div class="font-semibold mb-2 text-green-500">✅ Booking Confirmed!</div>
+                    <div class="text-sm text-gray-300 space-y-1">
+                      <div><strong>Owner:</strong> <?php echo htmlspecialchars($booking['owner_name']); ?></div>
+                      <div><strong>Phone:</strong> <?php echo htmlspecialchars($booking['owner_phone']); ?></div>
+                      <div><strong>Email:</strong> <?php echo htmlspecialchars($booking['owner_email']); ?></div>
+                      <?php if (!empty($booking['bike_address'])): ?>
+                        <div><strong>Pickup:</strong> <?php echo htmlspecialchars($booking['bike_address']); ?></div>
+                      <?php endif; ?>
+                    </div>
+                  </div>
+
+                  <div class="flex gap-3">
+                    <a href="?cancel=<?php echo $booking['id']; ?>"
+                       class="px-4 py-2 border border-red-600 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition text-sm font-semibold"
+                       onclick="return confirm('Are you sure you want to cancel this confirmed booking?')">
+                      Cancel Booking
+                    </a>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
+
+    <!-- Cancelled Bookings (NOVÁ SEKCE) -->
+    <?php if (!empty($cancelled_bookings)): ?>
+      <div class="mb-12">
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+          <span>❌</span>
+          <span>Cancelled Bookings</span>
+          <span class="bg-red-900/50 text-red-500 text-sm px-3 py-1 rounded"><?php echo count($cancelled_bookings); ?></span>
+        </h2>
+
+        <div class="space-y-4">
+          <?php foreach ($cancelled_bookings as $booking): ?>
+            <div class="bg-gray-900 border border-red-800 rounded-xl p-6 hover:border-red-700 transition">
+              <div class="flex flex-col md:flex-row gap-6">
+
+                <!-- Bike Image -->
+                <div class="bg-gradient-to-br from-gray-800 to-gray-900 w-full md:w-32 h-32 rounded-lg flex items-center justify-center text-5xl flex-shrink-0">
+                  <?php
+                  $emoji = '🚴';
+                  if (strpos(strtolower($booking['bike_type']), 'mountain') !== false) $emoji = '🚵';
+                  if (strpos(strtolower($booking['bike_type']), 'electric') !== false) $emoji = '⚡';
+                  echo $emoji;
+                  ?>
+                </div>
+
+                <!-- Booking Details -->
+                <div class="flex-grow">
+                  <div class="flex flex-col md:flex-row justify-between items-start gap-4 mb-4">
+                    <div>
+                      <div class="flex items-center gap-3 mb-2">
+                        <h3 class="text-xl font-bold"><?php echo htmlspecialchars($booking['bike_type']); ?></h3>
+                        <?php echo getStatusBadge($booking['status']); ?>
+                      </div>
+                      <p class="text-gray-400 text-sm">by <?php echo htmlspecialchars($booking['owner_name']); ?></p>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-500 line-through">
+                      <?php echo number_format($booking['total_price'], 0); ?> Kč
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
+                    <div>
+                      <div class="text-gray-400">Start Date</div>
+                      <div class="font-semibold">📅 <?php echo date('M d, Y', strtotime($booking['rental_date'])); ?></div>
+                    </div>
+                    <div>
+                      <div class="text-gray-400">Duration</div>
+                      <div class="font-semibold">⏱️ <?php echo $booking['rental_days']; ?> days</div>
+                    </div>
+                    <div>
+                      <div class="text-gray-400">Location</div>
+                      <div class="font-semibold">📍 <?php echo htmlspecialchars($booking['bike_city']); ?></div>
+                    </div>
+                    <div>
+                      <div class="text-gray-400">Cancelled</div>
+                      <div class="font-semibold text-red-500">❌ Declined</div>
+                    </div>
+                  </div>
+
+                  <div class="bg-red-900/30 border border-red-700 rounded-lg p-4">
+                    <div class="text-sm text-red-400">
+                      ❌ This booking was cancelled. You can book another bike or try different dates.
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
+
+    <!-- Completed Bookings -->
+    <?php if (!empty($completed_bookings)): ?>
+      <div>
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+          <span>✅</span>
+          <span>Completed Trips</span>
+        </h2>
+
+        <div class="space-y-4">
+          <?php foreach ($completed_bookings as $booking): ?>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 opacity-75 hover:opacity-100 transition">
+              <div class="flex flex-col md:flex-row justify-between items-start gap-4">
                 <div>
                   <div class="flex items-center gap-3 mb-2">
-                    <h3 class="text-2xl font-bold"><?php echo htmlspecialchars($bike['bike_type']); ?></h3>
-                    <?php if ($bike['available']): ?>
-                      <span class="bg-green-900/50 text-green-500 text-xs px-3 py-1 rounded">Available</span>
-                    <?php else: ?>
-                      <span class="bg-gray-700 text-gray-400 text-xs px-3 py-1 rounded">Unavailable</span>
-                    <?php endif; ?>
+                    <h3 class="text-lg font-bold"><?php echo htmlspecialchars($booking['bike_type']); ?></h3>
+                    <?php echo getStatusBadge($booking['status']); ?>
                   </div>
-                  <p class="text-gray-400"><?php echo htmlspecialchars($bike['description'] ?? 'No description'); ?></p>
-                </div>
-
-                <div class="text-right">
-                  <div class="text-3xl font-bold text-cyan-500 mb-1">
-                    <?php echo number_format($bike['price_per_day'], 0); ?> Kč
-                    <span class="text-sm text-gray-500">/day</span>
+                  <div class="text-sm text-gray-400 space-y-1">
+                    <div>📅 <?php echo date('M d, Y', strtotime($booking['rental_date'])); ?> • <?php echo $booking['rental_days']; ?> days</div>
+                    <div>👤 <?php echo htmlspecialchars($booking['owner_name']); ?></div>
                   </div>
                 </div>
-              </div>
-
-              <!-- Stats & Info -->
-              <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4 text-sm">
-                <div>
-                  <div class="text-gray-400">Location</div>
-                  <div class="font-semibold">📍 <?php echo htmlspecialchars($bike['city'] ?? 'Not set'); ?></div>
+                <div class="text-xl font-bold text-gray-500">
+                  <?php echo number_format($booking['total_price'], 0); ?> Kč
                 </div>
-                <div>
-                  <div class="text-gray-400">Frame Size</div>
-                  <div class="font-semibold">📏 <?php echo htmlspecialchars($bike['frame_size'] ?? 'N/A'); ?></div>
-                </div>
-                <div>
-                  <div class="text-gray-400">Total Bookings</div>
-                  <div class="font-semibold">📊 <?php echo $bike['total_bookings']; ?></div>
-                </div>
-              </div>
-
-              <?php if ($bike['pending_bookings'] > 0): ?>
-                <div class="bg-yellow-900/30 border border-yellow-700 rounded-lg p-3 mb-4">
-                  <div class="flex items-center gap-2 text-sm text-yellow-500">
-                    <span>⚠️</span>
-                    <span><strong><?php echo $bike['pending_bookings']; ?></strong> pending booking<?php echo $bike['pending_bookings'] > 1 ? 's' : ''; ?> waiting for your approval</span>
-                  </div>
-                </div>
-              <?php endif; ?>
-
-              <!-- Action Buttons -->
-              <div class="flex flex-wrap gap-3">
-                <a href="edit_bike.php?id=<?php echo $bike['id']; ?>"
-                   class="px-4 py-2 bg-cyan-600 hover:bg-cyan-800 rounded-lg transition text-sm font-semibold">
-                  ✏️ Edit
-                </a>
-
-                <a href="?toggle=<?php echo $bike['id']; ?>"
-                   class="px-4 py-2 <?php echo $bike['available'] ? 'bg-cyan-600 hover:bg-cyan-800' : 'bg-gray-900 hover:bg-gray-800'; ?> rounded-lg transition text-sm font-semibold"
-                   onclick="return confirm('Are you sure you want to <?php echo $bike['available'] ? 'hide' : 'show'; ?> this bike?')">
-                  <?php echo $bike['available'] ? '👁️ Hide' : '✅ Show'; ?>
-                </a>
-
-                <a href="bike_bookings.php?id=<?php echo $bike['id']; ?>"
-                   class="px-4 py-2 border border-cyan-600 hover:bg-cyan-800 rounded-lg transition text-sm font-semibold">
-                  📅 View Bookings (<?php echo $bike['total_bookings']; ?>)
-                </a>
-
-                <a href="?delete=<?php echo $bike['id']; ?>"
-                   class="px-4 py-2 border border-red-600 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition text-sm font-semibold"
-                   onclick="return confirm('Are you sure you want to delete this bike? This action cannot be undone.')">
-                  🗑️ Delete
-                </a>
               </div>
             </div>
-
-          </div>
+          <?php endforeach; ?>
         </div>
-      <?php endforeach; ?>
-    </div>
+      </div>
+    <?php endif; ?>
+
+    <!-- Past Bookings -->
+    <?php if (!empty($past_bookings)): ?>
+      <div>
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+          <span>📜</span>
+          <span>Past Bookings</span>
+        </h2>
+
+        <div class="space-y-4">
+          <?php foreach ($past_bookings as $booking): ?>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 opacity-75 hover:opacity-100 transition">
+              <div class="flex flex-col md:flex-row justify-between items-start gap-4">
+                <div>
+                  <div class="flex items-center gap-3 mb-2">
+                    <h3 class="text-lg font-bold"><?php echo htmlspecialchars($booking['bike_type']); ?></h3>
+                    <?php echo getStatusBadge($booking['status']); ?>
+                  </div>
+                  <div class="text-sm text-gray-400 space-y-1">
+                    <div>📅 <?php echo date('M d, Y', strtotime($booking['rental_date'])); ?> • <?php echo $booking['rental_days']; ?> days</div>
+                    <div>👤 <?php echo htmlspecialchars($booking['owner_name']); ?></div>
+                  </div>
+                </div>
+                <div class="text-xl font-bold text-gray-500">
+                  <?php echo number_format($booking['total_price'], 0); ?> Kč
+                </div>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
 
   <?php endif; ?>
 
 </main>
 
 <!-- Footer -->
-<?php include '../components/footer.php'; ?>
+<?php include 'components/footer.php'; ?>
 
 </body>
 </html>

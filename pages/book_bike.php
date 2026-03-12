@@ -127,24 +127,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
       // Vytvořit rezervaci
       $stmt = $pdo->prepare("
-                INSERT INTO bookings (
-                    bike_id,
-                    renter_id,
-                    rental_date,
-                    rental_days,
-                    total_price,
-                    status,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, 'pending', NOW())
-            ");
+        INSERT INTO bookings (
+            bike_id,
+            renter_id,
+            rental_date,
+            rental_days,
+            total_price,
+            status,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, 'pending', NOW())
+    ");
 
       $stmt->execute([
         $bike_id,
         $user_id,
         $rental_date,
         $rental_days,
-        $total_price,
-        $special_requirements
+        $total_price
       ]);
 
       $_SESSION['success'] = "Booking request sent! Waiting for owner's approval.";

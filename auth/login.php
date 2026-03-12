@@ -48,15 +48,12 @@
         >
       </div>
 
-      <!-- Remember Me & Forgot Password -->
+      <!-- Remember Me -->
       <div class="flex items-center justify-between text-sm">
         <label class="flex items-center text-gray-400 cursor-pointer">
           <input type="checkbox" name="remember" class="mr-2 accent-cyan-600">
           Remember me
         </label>
-        <a href="forgot_password.php" class="text-cyan-500 hover:text-cyan-400 transition">
-          Forgot password?
-        </a>
       </div>
 
       <!-- Submit Button -->

@@ -411,7 +411,7 @@ function getStatusBadge($status) {
 
                   <div class="bg-red-900/30 border border-red-700 rounded-lg p-4">
                     <div class="text-sm text-red-400">
-                      ❌ This booking was declined by the owner. You can book another bike or try different dates.
+                      ❌ This booking was cancelled. You can book another bike or try different dates.
                     </div>
                   </div>
                 </div>

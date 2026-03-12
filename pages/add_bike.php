@@ -109,25 +109,7 @@ unset($_SESSION['errors'], $_SESSION['old_data']);
 <body class="bg-black text-white min-h-screen">
 
 <!-- Header -->
-<header class="border-b border-gray-800 sticky top-0 bg-black z-50">
-  <div class="container mx-auto px-6 py-4 flex justify-between items-center">
-    <div class="flex items-center gap-8">
-      <a href="../index.php" class="text-2xl font-bold hover:text-cyan-500 transition">BikeRent</a>
-      <nav class="hidden md:flex gap-6 text-sm">
-        <a href="dashboard.php" class="text-gray-400 hover:text-white transition">Dashboard</a>
-        <a href="browse_bikes.php" class="text-gray-400 hover:text-white transition">Browse Bikes</a>
-        <a href="my_bikes.php" class="text-gray-400 hover:text-white transition">My Bikes</a>
-      </nav>
-    </div>
-
-    <div class="flex items-center gap-4">
-      <span class="text-gray-400 text-sm hidden md:block">Hello, <span class="text-white font-semibold"><?php echo htmlspecialchars($user_name); ?></span></span>
-      <a href="../auth/logout.php" class="px-4 py-2 text-sm border border-red-600 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition">
-        Logout
-      </a>
-    </div>
-  </div>
-</header>
+<?php include '../components/header.php'?>
 
 <!-- Main Content -->
 <main class="container mx-auto px-6 py-12 max-w-3xl">
@@ -224,7 +206,7 @@ unset($_SESSION['errors'], $_SESSION['old_data']);
           rows="4"
           maxlength="500"
           placeholder="Describe your bike, its condition, any special features..."
-          class="w-full px-4 py-3 bg-black border border-gray-800 rounded-lg focus:border-cyan-600 focus:outline-none transition resize-none"
+          class="w-full px-4 py-3 bg-black border border-gray-800 rounded-lg focus:border-cyan-600 focus:outline-none overflow-y-auto transition resize-none"
         ><?php echo htmlspecialchars($old_data['description'] ?? ''); ?></textarea>
         <p class="text-xs text-gray-500 mt-1">Max 500 characters</p>
       </div>

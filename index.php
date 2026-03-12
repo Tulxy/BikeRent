@@ -33,7 +33,7 @@
         Rent a bike.<br/>
         <span class="text-cyan-500">Explore the city.</span>
       </h1>
-      <p class="text-xl text-gray-400 mb-8">
+      <p class="text-xl text-gray-xc400 mb-8">
         Simple bike rentals in Zlín. Choose your bike and ride.
       </p>
 
