@@ -111,6 +111,7 @@ unset($_SESSION['errors'], $_SESSION['old_data']);
 <!-- Header -->
 <?php include '../components/header.php'?>
 
+
 <!-- Main Content -->
 <main class="container mx-auto px-6 py-12 max-w-3xl">
 
@@ -206,7 +207,8 @@ unset($_SESSION['errors'], $_SESSION['old_data']);
           rows="4"
           maxlength="500"
           placeholder="Describe your bike, its condition, any special features..."
-          class="w-full px-4 py-3 bg-black border border-gray-800 rounded-lg focus:border-cyan-600 focus:outline-none overflow-y-auto transition resize-none"
+          class="w-full px-4 py-3 bg-black border border-gray-800 rounded-lg focus:border-cyan-600 focus:outline-none transition resize-none"
+          truncate
         ><?php echo htmlspecialchars($old_data['description'] ?? ''); ?></textarea>
         <p class="text-xs text-gray-500 mt-1">Max 500 characters</p>
       </div>
